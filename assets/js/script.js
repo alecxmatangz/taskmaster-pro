@@ -3,9 +3,11 @@ var tasks = {};
 var createTask = function(taskText, taskDate, taskList) {
   // create elements that make up a task item
   var taskLi = $("<li>").addClass("list-group-item");
+
   var taskSpan = $("<span>")
     .addClass("badge badge-primary badge-pill")
     .text(taskDate);
+    
   var taskP = $("<p>")
     .addClass("m-1")
     .text(taskText);
@@ -13,6 +15,9 @@ var createTask = function(taskText, taskDate, taskList) {
   // append span and p element to parent li
   taskLi.append(taskSpan, taskP);
 
+  // check due date
+  // execute auditTask before adding the task item to the page (ensures the element has all of its proper classes before getting to the page)
+  auditTask(taskLi);
 
   // append to ul list on the page
   $("#list-" + taskList).append(taskLi);
@@ -44,6 +49,145 @@ var loadTasks = function() {
 var saveTasks = function() {
   localStorage.setItem("tasks", JSON.stringify(tasks));
 };
+
+var auditTask = function(taskEl) {
+  // to ensure element is getting to the function
+  console.log(taskEl);
+
+  // get date from task element
+  var date = $(taskEl).find("span").text().trim();
+
+  // ensure it worked
+  console.log(date);
+
+  // convert to moment object at 5:00pm
+  var time = moment(date, "L").set("hour", 17);
+  // this should print out an object of the date varialbe, but at 5:00pm of that date
+  console.log(time);
+
+  // remove any old classes from element
+  $(taskEl).removeClass("list-group-item-warning list-group-item-danger");
+
+  // apply new class if task is near/over due date
+  if (moment().isAfter(time)) {
+    $(taskEl).addClass("list-group-item-danger");
+  }
+  else if (Math.abs(moment().diff(time, "days")) <=2) {
+    $(taskEl).addClass("list-group-item-warning");
+  }
+};
+
+$(".card .list-group").sortable({
+  connectWith: $(".card .list-group"),
+  scroll: false,
+  tolerance: "pointer",
+  helper: "clone",
+  activate: function(event) {
+    console.log("activate", this);
+  },
+  deactivate: function(event) {
+    console.log("deactivate", this);
+  },
+  over: function(event) {
+    console.log("over", this);
+  },
+  out: function(event) {
+    console.log("out", this);
+  },
+  update: function(event) {
+    // array to store the task data in
+    var tempArr = [];
+
+    // loop over current set of children in sortable list
+    $(this).children().each(function() {
+      var text = $(this)
+        .find("p")
+        .text()
+        .trim();
+      
+      var date = $(this)
+        .find("span")
+        .text()
+        .trim();
+      
+      console.log(text, date);
+
+      // add task data to the temp array as an object
+      tempArr.push({
+        text: text,
+        date: date
+      });
+    });
+    // trim down list's ID to match object property
+    var arrName = $(this)
+      .attr("id")
+      .replace("list-", "");
+
+    // update array on tasks object and save
+    tasks[arrName] = tempArr;
+    saveTasks();
+
+    console.log(tempArr);
+  },
+  stop: function(event) {
+    $(this).removeClass("dropover");
+  }
+});
+
+// trash icon can be dropped onto
+$("#trash").droppable({
+  accept: ".card .list-group-item",
+  tolerance: "touch",
+  drop: function(event, ui) {
+    console.log("drop");
+    // remove dragged element from the DOM
+    ui.draggable.remove();
+  },
+  over: function(event, ui) {
+    console.log("over");
+  },
+  out: function(event, ui) {
+    console.log("out");
+  }
+});
+
+// modal was triggered
+$("#task-form-modal").on("show.bs.modal", function() {
+  // clear values
+  $("#modalTaskDescription, #modalDueDate").val("");
+});
+
+// modal is fully visible
+$("#task-form-modal").on("shown.bs.modal", function() {
+  // highlight textarea
+  $("#modalTaskDescription").trigger("focus");
+});
+
+$("#modalDueDate").datepicker({
+  minDate: 1
+});
+
+// save button in modal was clicked
+$("#task-form-modal .btn-primary").click(function() {
+  // get form values
+  var taskText = $("#modalTaskDescription").val();
+  var taskDate = $("#modalDueDate").val();
+
+  if (taskText && taskDate) {
+    createTask(taskText, taskDate, "toDo");
+
+    // close modal
+    $("#task-form-modal").modal("hide");
+
+    // save in tasks array
+    tasks.toDo.push({
+      text: taskText,
+      date: taskDate
+    });
+
+    saveTasks();
+  }
+});
 
 // click event listener for click on task to turn <p> into <textarea>
 $(".list-group").on("click", "p", function() {
@@ -107,12 +251,22 @@ $(".list-group").on("click", "span", function() {
   // swap out elements
   $(this).replaceWith(dateInput);
 
-  //automatically focus on new element
+  // enable jquery ui datepicker
+  dateInput.datepicker({
+    minDate: 1,
+    // onClose allows us to execute a function when the datepicker closes
+    onClose: function() {
+      // when calendar is closed, force a "change event on the 'dateInput"
+      $(this).trigger("change");
+    }
+  });
+
+  //automatically focus on new element / bring up the calendar
   dateInput.trigger("focus");
 });
 
 // due date was changed (converted back to span when user clicks outside)
-$(".list-group").on("blur", "input[type='text']", function() {
+$(".list-group").on("change", "input[type='text']", function() {
   // get current text
   var date = $(this)
     .val()
@@ -138,42 +292,11 @@ $(".list-group").on("blur", "input[type='text']", function() {
     .addClass("badge badge-primary badge-pill")
     .text(date);
   
-  // replace input with span element
-  $(this).replaceWith(taskSpan);
-});
-
-// modal was triggered
-$("#task-form-modal").on("show.bs.modal", function() {
-  // clear values
-  $("#modalTaskDescription, #modalDueDate").val("");
-});
-
-// modal is fully visible
-$("#task-form-modal").on("shown.bs.modal", function() {
-  // highlight textarea
-  $("#modalTaskDescription").trigger("focus");
-});
-
-// save button in modal was clicked
-$("#task-form-modal .btn-primary").click(function() {
-  // get form values
-  var taskText = $("#modalTaskDescription").val();
-  var taskDate = $("#modalDueDate").val();
-
-  if (taskText && taskDate) {
-    createTask(taskText, taskDate, "toDo");
-
-    // close modal
-    $("#task-form-modal").modal("hide");
-
-    // save in tasks array
-    tasks.toDo.push({
-      text: taskText,
-      date: taskDate
-    });
-
-    saveTasks();
-  }
+    // replace input with span element
+    $(this).replaceWith(taskSpan);
+  
+    // Pass task's <li> element into auditTask() to check new due date
+    auditTask($(taskSpan).closest(".list-group-item"));
 });
 
 // remove all tasks
@@ -187,72 +310,3 @@ $("#remove-tasks").on("click", function() {
 
 // load tasks for the first time
 loadTasks();
-
-$(".card .list-group").sortable({
-  connectWith: $(".card .list-group"),
-  scroll: false,
-  tolerance: "pointer",
-  helper: "clone",
-  activate: function(event) {
-    console.log("activate", this);
-  },
-  deactivate: function(event) {
-    console.log("deactivate", this);
-  },
-  over: function(event) {
-    console.log("over", this);
-  },
-  out: function(event) {
-    console.log("out", this);
-  },
-  update: function(event) {
-    // array to store the task data in
-    var tempArr = [];
-
-    // loop over current set of children in sortable list
-    $(this).children().each(function() {
-      var text = $(this)
-        .find("p")
-        .text()
-        .trim();
-      
-      var date = $(this)
-        .find("span")
-        .text()
-        .trim();
-      
-      console.log(text, date);
-
-      // add task data to the temp array as an object
-      tempArr.push({
-        text: text,
-        date: date
-      });
-    });
-    // trim down list's ID to match object property
-    var arrName = $(this)
-      .attr("id")
-      .replace("list-", "");
-
-    // update array on tasks object and save
-    tasks[arrName] = tempArr;
-    saveTasks();
-
-    console.log(tempArr);
-  }
-});
-
-$("#trash").droppable({
-  accept: ".card .list-group-item",
-  tolerance: "touch",
-  drop: function(event, ui) {
-    console.log("drop");
-    ui.draggable.remove();
-  },
-  over: function(event, ui) {
-    console.log("over");
-  },
-  out: function(event, ui) {
-    console.log("out");
-  }
-});
